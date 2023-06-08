@@ -44,6 +44,7 @@ async function run() {
         const usersCollection = client.db('coutureCamp').collection('users')
         const classesCollection = client.db('coutureCamp').collection('classes')
         const instructorsCollection = client.db('coutureCamp').collection('instructors')
+        const cartCollection = client.db('coutureCamp').collection('cart')
 
 
         // JWT token send during login
@@ -82,7 +83,6 @@ async function run() {
         // USER- ADD USER TO COLLECTION
         app.post('/users', async (req, res) => {
             const newUser = req.body
-            console.log(newUser);
 
             const query = { email: newUser.email }
             const existingUser = await usersCollection.findOne(query)
@@ -98,7 +98,6 @@ async function run() {
         // check user role
         app.get('/users/role/:email', verifyJWT, async (req, res) => {
             const email = req.params.email
-            console.log(email, req.decoded.email);
             if (email !== req.decoded.email) {
                 res.status(401).send({ error: true, message: 'unauthorized request 3' })
             }
@@ -109,6 +108,18 @@ async function run() {
                     res.send({ role })
                 }
             }
+        })
+
+        // CART
+        app.post('/cart', verifyJWT, async (req, res) => {
+            const classItem = req.body
+            const result = await cartCollection.insertOne(classItem)
+            res.send(result)
+        })
+
+        app.get('/cart', verifyJWT, async (req, res) => {
+            const result = await cartCollection.find().toArray()
+            res.send(result)
         })
 
         // Send a ping to confirm a successful connection
