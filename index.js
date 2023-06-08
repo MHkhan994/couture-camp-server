@@ -24,7 +24,7 @@ const verifyJWT = (req, res, next) => {
     })
 }
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qmhrwse.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -95,6 +95,11 @@ async function run() {
             }
         })
 
+        app.get('/users', verifyJWT, async (req, res) => {
+            const result = await usersCollection.find().toArray()
+            res.send(result)
+        })
+
         // check user role
         app.get('/users/role/:email', verifyJWT, async (req, res) => {
             const email = req.params.email
@@ -113,12 +118,42 @@ async function run() {
         // CART
         app.post('/cart', verifyJWT, async (req, res) => {
             const classItem = req.body
-            const result = await cartCollection.insertOne(classItem)
+            const query = {
+                $and: [
+                    { itemId: req.body.itemId },
+                    { email: req.body.email }
+                ]
+            }
+            const existingClass = await cartCollection.findOne(query)
+            if (existingClass) {
+                res.send({ exists: 'exists' })
+            }
+            else {
+                const result = await cartCollection.insertOne(classItem)
+                res.send(result)
+            }
+        })
+
+        app.delete('/cart/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const result = await cartCollection.deleteOne(query)
             res.send(result)
         })
 
         app.get('/cart', verifyJWT, async (req, res) => {
-            const result = await cartCollection.find().toArray()
+            const email = req.query.email;
+
+            if (!email) {
+                res.send([])
+            }
+
+            else if (req.decoded.email !== email) {
+                res.status(401).send({ error: true, message: 'unauthorized access request' })
+                console.log(req.decoded.email, email);
+            }
+
+            const result = await cartCollection.find({ email: email }).toArray()
             res.send(result)
         })
 
