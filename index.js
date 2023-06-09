@@ -46,6 +46,16 @@ async function run() {
         const instructorsCollection = client.db('coutureCamp').collection('instructors')
         const cartCollection = client.db('coutureCamp').collection('cart')
 
+        // verify admin middlewere
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded.email;
+            const user = await usersCollection.findOne({ email: email });
+            if (user.role !== 'admin') {
+                res.status(403).send({ error: true, message: 'forbidden access request' })
+            }
+            next()
+        }
+
 
         // JWT token send during login
         app.post('/jwt', async (req, res) => {
@@ -80,6 +90,11 @@ async function run() {
             res.send(result)
         })
 
+
+
+
+
+
         // USER- ADD USER TO COLLECTION
         app.post('/users', async (req, res) => {
             const newUser = req.body
@@ -95,7 +110,7 @@ async function run() {
             }
         })
 
-        app.get('/users', verifyJWT, async (req, res) => {
+        app.get('/users', verifyJWT, verifyAdmin, async (req, res) => {
             const result = await usersCollection.find().toArray()
             res.send(result)
         })
@@ -114,6 +129,41 @@ async function run() {
                 }
             }
         })
+
+        // make admin or instructor
+        app.patch('/user/update-role', verifyJWT, verifyAdmin, async (req, res) => {
+            const newRole = req.body.newRole;
+            const email = req.body.email
+            const result = await usersCollection.updateOne({ email: email }, {
+                $set: {
+                    role: newRole
+                }
+            })
+            res.send(result)
+        })
+
+        // deletes user data from cart and user colllection
+        app.delete('/user/:email', verifyJWT, verifyAdmin, async (req, res) => {
+            const email = req.params.email;
+            try {
+                const cartResult = await cartCollection.deleteMany({ email: email })
+                const userResult = await usersCollection.deleteOne({ email: email })
+
+                if (cartResult.deletedCount === 0 && userResult.deletedCount === 0) {
+                    throw new Error("did't delete form any account")
+                }
+                res.send({ status: 'success' })
+            }
+            catch (err) {
+                console.log(err);
+                res.status(500).send('Error deleting data');
+            }
+
+        })
+
+
+
+
 
         // CART
         app.post('/cart', verifyJWT, async (req, res) => {
