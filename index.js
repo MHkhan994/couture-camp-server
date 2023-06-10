@@ -56,6 +56,16 @@ async function run() {
             next()
         }
 
+        // verify instructor middlewere
+        const verifyInstructor = async (req, res, next) => {
+            const email = req.decoded.email;
+            const user = await usersCollection.findOne({ email: email });
+            if (user.role !== 'instructor') {
+                res.status(403).send({ error: true, message: 'forbidden access request' })
+            }
+            next()
+        }
+
 
         // JWT token send during login
         app.post('/jwt', async (req, res) => {
@@ -65,9 +75,13 @@ async function run() {
             res.send({ token })
         })
 
-        // CLASSES
+
+
+        // -------------------CLASSES-------------------
+
+        // send all classes except which are pending
         app.get('/classes', async (req, res) => {
-            const result = await classesCollection.find().toArray()
+            const result = await classesCollection.find({ status: { $ne: 'pending' } }).toArray()
             res.send(result)
         })
 
@@ -77,8 +91,17 @@ async function run() {
             res.send(result)
         })
 
+        // add class
+        app.post('/class/add', verifyJWT, verifyInstructor, async (req, res) => {
+            const newClass = req.body;
+            const result = await classesCollection.insertOne(newClass)
+            res.send(result)
+        })
 
-        // INSTRUCTORS  
+
+
+
+        // ------------------INSTRUCTORS ----------------- 
         app.get('/instructors', async (req, res) => {
             const result = await instructorsCollection.find().toArray()
             res.send(result)
@@ -95,7 +118,7 @@ async function run() {
 
 
 
-        // USER- ADD USER TO COLLECTION
+        // -------------USER- ADD USER TO COLLECTION-------------------
         app.post('/users', async (req, res) => {
             const newUser = req.body
 
@@ -165,7 +188,7 @@ async function run() {
 
 
 
-        // CART
+        // -------------------CART-----------------------
         app.post('/cart', verifyJWT, async (req, res) => {
             const classItem = req.body
             const query = {
