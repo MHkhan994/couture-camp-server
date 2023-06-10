@@ -45,6 +45,7 @@ async function run() {
         const classesCollection = client.db('coutureCamp').collection('classes')
         const instructorsCollection = client.db('coutureCamp').collection('instructors')
         const cartCollection = client.db('coutureCamp').collection('cart')
+        const instructorClassCollection = client.db('coutureCamp').collection('instructorClasses')
 
         // verify admin middlewere
         const verifyAdmin = async (req, res, next) => {
@@ -81,7 +82,7 @@ async function run() {
 
         // send all classes except which are pending
         app.get('/classes', async (req, res) => {
-            const result = await classesCollection.find({ status: { $ne: 'pending' } }).toArray()
+            const result = await classesCollection.find({ status: { $ne: 'pending' || 'denied' } }).toArray()
             res.send(result)
         })
 
@@ -91,11 +92,44 @@ async function run() {
             res.send(result)
         })
 
-        // add class
+        // add class to instructor classes
         app.post('/class/add', verifyJWT, verifyInstructor, async (req, res) => {
             const newClass = req.body;
-            const result = await classesCollection.insertOne(newClass)
+            const result = await instructorClassCollection.insertOne(newClass)
             res.send(result)
+        })
+
+        // send instructor classes for instructor by email
+        app.get('/classes/instructor/:email', verifyJWT, verifyInstructor, async (req, res) => {
+            const email = req.params.email;
+            const result = await instructorClassCollection.find({ email: email }).toArray()
+            res.send(result)
+        })
+
+        // delete class form instructor classes collection
+        app.delete('/class/:id', verifyJWT, verifyInstructor, async (req, res) => {
+            const id = req.params.id
+            console.log(id);
+            const result = await instructorClassCollection.deleteOne({ _id: new ObjectId(id) })
+            res.send(result)
+        })
+
+        // send all instructor classes for admin only (manage classes)
+        app.get('/classes/admin/all', verifyJWT, verifyAdmin, async (req, res) => {
+            const result = await instructorClassCollection.find().toArray()
+            res.send(result)
+        })
+
+        // class status change to approved or denied. if approved add to classCollection
+        app.patch('/instructor-class/status', async (req, res) => {
+            const id = req.body.id;
+            const newStatus = req.body.status;
+            const result = await instructorClassCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: newStatus } })
+            if (result.modifiedCount > 0) {
+                const approvedClass = await instructorClassCollection.findOne({ _id: new ObjectId(id) })
+                const insertRes = await classesCollection.insertOne(approvedClass)
+                res.send(insertRes)
+            }
         })
 
 
@@ -163,25 +197,6 @@ async function run() {
                 }
             })
             res.send(result)
-        })
-
-        // deletes user data from cart and user colllection
-        app.delete('/user/:email', verifyJWT, verifyAdmin, async (req, res) => {
-            const email = req.params.email;
-            try {
-                const cartResult = await cartCollection.deleteMany({ email: email })
-                const userResult = await usersCollection.deleteOne({ email: email })
-
-                if (cartResult.deletedCount === 0 && userResult.deletedCount === 0) {
-                    throw new Error("did't delete form any account")
-                }
-                res.send({ status: 'success' })
-            }
-            catch (err) {
-                console.log(err);
-                res.status(500).send('Error deleting data');
-            }
-
         })
 
 
