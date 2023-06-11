@@ -84,7 +84,7 @@ async function run() {
 
         // send all classes except which are pending
         app.get('/classes', async (req, res) => {
-            const result = await classesCollection.find({ status: { $ne: 'pending' || 'denied' } }).toArray()
+            const result = await classesCollection.find({ status: 'approved' }).toArray()
             res.send(result)
         })
 
@@ -97,50 +97,43 @@ async function run() {
         // add class to instructor classes
         app.post('/class/add', verifyJWT, verifyInstructor, async (req, res) => {
             const newClass = req.body;
-            const result = await instructorClassCollection.insertOne(newClass)
+            const result = await classesCollection.insertOne(newClass)
             res.send(result)
         })
 
         // send instructor classes for instructor by email
         app.get('/classes/instructor/:email', verifyJWT, verifyInstructor, async (req, res) => {
             const email = req.params.email;
-            const result = await instructorClassCollection.find({ instructorEmail: email }).toArray()
+            const result = await classesCollection.find({ instructorEmail: email }).toArray()
             res.send(result)
         })
 
         // delete class form instructor classes collection
         app.delete('/class/:id', verifyJWT, verifyInstructor, async (req, res) => {
             const id = req.params.id
-            console.log(id);
-            const result = await instructorClassCollection.deleteOne({ _id: new ObjectId(id) })
+            const result = await classesCollection.deleteOne({ _id: new ObjectId(id) })
             res.send(result)
         })
 
         // send all instructor classes for admin only (manage classes)
         app.get('/classes/admin/all', verifyJWT, verifyAdmin, async (req, res) => {
-            const result = await instructorClassCollection.find().toArray()
+            const result = await classesCollection.find().sort({ status: 1 }).toArray()
             res.send(result)
         })
 
         // class status change to approved or denied. if approved add to classCollection
         app.patch('/instructor-class/status/admin', verifyJWT, verifyAdmin, async (req, res) => {
             const id = req.body.id;
-            console.log(id);
             const newStatus = req.body.status;
-            const result = await instructorClassCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: newStatus } })
-            if (result.modifiedCount > 0) {
-                const approvedClass = await instructorClassCollection.findOne({ _id: new ObjectId(id) })
-                const insertRes = await classesCollection.insertOne(approvedClass)
-                res.send(insertRes)
-            }
+            const result = await classesCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: newStatus } })
+            res.send(result);
         })
 
         // update class admin feedback
-        app.patch('/instructor-class/feedback', async (req, res) => {
+        app.patch('/instructor-class/feedback', verifyJWT, verifyAdmin, async (req, res) => {
             const feedback = req.body.feedback
             const id = req.body.id;
-            console.log(id);
-            const result = await instructorClassCollection.updateOne({ _id: new ObjectId(id) }, { $set: { feedback: feedback } })
+            const result = await classesCollection.updateOne({ _id: new ObjectId(id) }, { $set: { feedback: feedback } })
             res.send(result)
         })
 
@@ -250,7 +243,6 @@ async function run() {
 
             else if (req.decoded.email !== email) {
                 res.status(401).send({ error: true, message: 'unauthorized access request' })
-                console.log(req.decoded.email, email);
             }
 
             const result = await cartCollection.find({ email: email }).toArray()
@@ -280,49 +272,49 @@ async function run() {
         // ---------------------- payment collection-----------------------
         app.post('/class/payment', async (req, res) => {
             const paidClass = req.body
-            console.log(paidClass);
             const classCartId = paidClass._id
             const cartResult = await cartCollection.deleteOne({ _id: new ObjectId(classCartId) })
             if (cartResult.deletedCount > 0) {
                 delete paidClass._id
+                paidClass.date = new Date()
                 const paymentResult = await paymentCollection.insertOne(paidClass)
 
                 const updateClassRes = await classesCollection.updateOne(
                     { _id: new ObjectId(paidClass.itemId) },
                     {
-                        $inc: { students: 1 },
-                        $inc: { availableSeats: -1 }
+                        $inc: { students: 1, availableSeats: -1 }
                     }
                 )
 
-                const instructorStudentsRes = await instructorClassCollection.updateOne(
-                    { email: paidClass.instructorEmail },
-                    {
-                        $inc: { students: 1 }
-                    }
-                )
+                console.log(paidClass.instructorEmail, paymentResult, updateClassRes);
                 res.send({ success: true })
             }
         })
 
-        // student payments
-        app.patch('/payments/user', verifyJWT, async (req, res) => {
+        // ckecks if a class if paid 
+        app.patch('/payments/user/paid', verifyJWT, async (req, res) => {
             const id = req.body.id
             const email = req.body.email
-            console.log(id, email);
             const result = await paymentCollection.findOne({
                 $and: [
                     { itemId: id },
                     { email: email }
                 ]
             })
-            console.log(result);
             if (result) {
                 res.send({ exists: true })
             }
             else {
                 res.send({ exists: false })
             }
+        })
+
+
+        // gives specific users enrolled classes
+        app.get('/payment/user/classes/:email', async (req, res) => {
+            const email = req.params.email;
+            const result = await paymentCollection.find({ email: email }).sort({ date: -1 }).toArray()
+            res.send(result)
         })
 
         // Send a ping to confirm a successful connection
