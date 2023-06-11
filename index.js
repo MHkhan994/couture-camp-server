@@ -3,6 +3,7 @@ const app = express()
 const cors = require('cors')
 require('dotenv').config()
 var jwt = require('jsonwebtoken');
+const stripe = require('stripe')(process.env.Payment_Secret_Key)
 const port = process.env.PORT || 5000
 
 app.use(cors())
@@ -46,6 +47,7 @@ async function run() {
         const instructorsCollection = client.db('coutureCamp').collection('instructors')
         const cartCollection = client.db('coutureCamp').collection('cart')
         const instructorClassCollection = client.db('coutureCamp').collection('instructorClasses')
+        const paymentCollection = client.db('coutureCamp').collection('payments')
 
         // verify admin middlewere
         const verifyAdmin = async (req, res, next) => {
@@ -102,7 +104,7 @@ async function run() {
         // send instructor classes for instructor by email
         app.get('/classes/instructor/:email', verifyJWT, verifyInstructor, async (req, res) => {
             const email = req.params.email;
-            const result = await instructorClassCollection.find({ email: email }).toArray()
+            const result = await instructorClassCollection.find({ instructorEmail: email }).toArray()
             res.send(result)
         })
 
@@ -121,8 +123,9 @@ async function run() {
         })
 
         // class status change to approved or denied. if approved add to classCollection
-        app.patch('/instructor-class/status', async (req, res) => {
+        app.patch('/instructor-class/status/admin', verifyJWT, verifyAdmin, async (req, res) => {
             const id = req.body.id;
+            console.log(id);
             const newStatus = req.body.status;
             const result = await instructorClassCollection.updateOne({ _id: new ObjectId(id) }, { $set: { status: newStatus } })
             if (result.modifiedCount > 0) {
@@ -130,6 +133,15 @@ async function run() {
                 const insertRes = await classesCollection.insertOne(approvedClass)
                 res.send(insertRes)
             }
+        })
+
+        // update class admin feedback
+        app.patch('/instructor-class/feedback', async (req, res) => {
+            const feedback = req.body.feedback
+            const id = req.body.id;
+            console.log(id);
+            const result = await instructorClassCollection.updateOne({ _id: new ObjectId(id) }, { $set: { feedback: feedback } })
+            res.send(result)
         })
 
 
@@ -243,6 +255,74 @@ async function run() {
 
             const result = await cartCollection.find({ email: email }).toArray()
             res.send(result)
+        })
+
+
+
+
+
+        // --------------------Payment intent-------------------
+        app.post("/create-payment-intent", verifyJWT, async (req, res) => {
+            const price = req.body.total;
+            const amount = price * 100;
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: 'usd',
+                payment_method_types: ['card']
+            })
+
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            });
+        });
+
+
+        // ---------------------- payment collection-----------------------
+        app.post('/class/payment', async (req, res) => {
+            const paidClass = req.body
+            console.log(paidClass);
+            const classCartId = paidClass._id
+            const cartResult = await cartCollection.deleteOne({ _id: new ObjectId(classCartId) })
+            if (cartResult.deletedCount > 0) {
+                delete paidClass._id
+                const paymentResult = await paymentCollection.insertOne(paidClass)
+
+                const updateClassRes = await classesCollection.updateOne(
+                    { _id: new ObjectId(paidClass.itemId) },
+                    {
+                        $inc: { students: 1 },
+                        $inc: { availableSeats: -1 }
+                    }
+                )
+
+                const instructorStudentsRes = await instructorClassCollection.updateOne(
+                    { email: paidClass.instructorEmail },
+                    {
+                        $inc: { students: 1 }
+                    }
+                )
+                res.send({ success: true })
+            }
+        })
+
+        // student payments
+        app.patch('/payments/user', verifyJWT, async (req, res) => {
+            const id = req.body.id
+            const email = req.body.email
+            console.log(id, email);
+            const result = await paymentCollection.findOne({
+                $and: [
+                    { itemId: id },
+                    { email: email }
+                ]
+            })
+            console.log(result);
+            if (result) {
+                res.send({ exists: true })
+            }
+            else {
+                res.send({ exists: false })
+            }
         })
 
         // Send a ping to confirm a successful connection
