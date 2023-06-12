@@ -40,7 +40,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        await client.connect();
+        // await client.connect();
 
         const usersCollection = client.db('coutureCamp').collection('users')
         const classesCollection = client.db('coutureCamp').collection('classes')
@@ -175,6 +175,17 @@ async function run() {
         app.get('/users', verifyJWT, verifyAdmin, async (req, res) => {
             const result = await usersCollection.find().toArray()
             res.send(result)
+        })
+
+        app.get('/user/:email', verifyJWT, async (req, res) => {
+            const email = req.params.email;
+            if (req.decoded.email !== email) {
+                res.status(401).send({ error: true, message: 'unauthorized user request' })
+            }
+            else {
+                const result = await usersCollection.findOne({ email: email })
+                res.send(result)
+            }
         })
 
         // check user role
